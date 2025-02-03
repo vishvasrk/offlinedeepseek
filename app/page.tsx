@@ -1,73 +1,87 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
+
+interface Task {
+  id: string;
+  keyword: string;
+}
 
 export default function Home() {
-  const [input, setInput] = useState<string>('');
-  const [response, setResponse] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false); // New loading state
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true); // Set loading to true when fetching starts
+  // Fetch tasks from Notion on mount
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  // Fetch tasks from Notion where `generate` column is empty
+  const fetchTasks = async () => {
+    setLoading(true);
+    setError(null);
 
     try {
-      const res = await fetch('http://localhost:3001/chat', {
+      const res = await fetch('/api/fetchTasks');
+      if (!res.ok) throw new Error(`Failed to fetch tasks`);
+      
+      const data = await res.json();
+      setTasks(data);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      setError('Failed to load tasks.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate content for a specific task
+  const generateContent = async (id: string, keyword: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/generateContent', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt: input }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, keyword }),
       });
 
-      if (!res.ok) {
-        const errorMessage = await res.text();
-        console.error('Error fetching response:', errorMessage);
-        throw new Error(`HTTP error! Status: ${res.status}, Message: ${errorMessage}`);
-      }
+      if (!res.ok) throw new Error(`Failed to generate content`);
 
-      const data = await res.json();
-      setResponse(data.response);
+      fetchTasks(); // Refresh task list after update
     } catch (error) {
-      console.error('Error fetching response:', error);
-      setResponse('Failed to fetch response. Please check the server and try again.');
+      console.error('Error generating content:', error);
+      setError('Failed to generate content.');
     } finally {
-      setLoading(false); // Set loading to false when fetching is complete
+      setLoading(false);
     }
   };
 
   return (
-    <div className="container flex flex-col items-center justify-center min-h-screen py-2 mb-2 p-1">
-      <h1 className="text-xl p-3">Chat with DeepSeek (Offline Mode)</h1>
-      <form onSubmit={handleSubmit} className="flex flex-row gap-5 mb-3">
-        <input
-          className="border border-gray-300 rounded-md p-2 text-[#1c1c1c] gap-3"
-          type="text"
-          size={60}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Enter your prompt"
-        />
-        <button className="bg-orange-300 p-2 border rounded-md text-[#1c1c1c]" type="submit">
-          Send
-        </button>
-      </form>
+    <div className="container flex flex-col items-center justify-center min-h-screen py-2">
+      <h1 className="text-xl p-3">Automated Content Generator</h1>
 
-      {/* Display loading indicator when fetching data */}
-      {loading && (
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-6 h-6 border-4 border-t-4 border-gray-300 border-dotted rounded-full animate-spin"></div>
-          <span className="text-lg text-gray-600">Fetching response...</span>
-        </div>
-      )}
+      {loading && <p className="text-gray-600">Processing...</p>}
+      {error && <p className="text-red-500">{error}</p>}
 
-      {response && !loading && (
-        <div className="flex flex-col gap-3 text-justify text-lg w-full max-w-xl">
-          <h2 className="font-medium text-md">Response</h2>
-          <div className="bg-gray-100 p-4 rounded-lg shadow-md">
-            <p className="text-base text-[#1c1c1c]">{response}</p>
-          </div>
-        </div>
+      {tasks.length > 0 ? (
+        <ul className="w-full max-w-2xl">
+          {tasks.map((task) => (
+            <li key={task.id} className="mb-4 p-4 border rounded-md bg-gray-50">
+              <h2 className="font-medium">{task.keyword}</h2>
+              <button
+                onClick={() => generateContent(task.id, task.keyword)}
+                className="mt-2 bg-blue-500 text-white px-4 py-2 rounded-md"
+              >
+                Generate Content
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No tasks found.</p>
       )}
     </div>
   );

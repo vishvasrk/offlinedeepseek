@@ -1,0 +1,52 @@
+import { NextApiRequest, NextApiResponse } from 'next';
+import { Client } from '@notionhq/client';
+import { UpdatePageParameters } from '@notionhq/client/build/src/api-endpoints';
+
+// Initialize Notion client
+const notion = new Client({ auth: process.env.NOTION_API_KEY });
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  try {
+    const { id, keyword }: { id: string; keyword: string } = req.body;
+
+    if (!id || !keyword) {
+      return res.status(400).json({ error: 'Missing required fields (id, keyword)' });
+    }
+
+    // Fetch content from DeepSeek
+    const response = await fetch('http://localhost:3001/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: keyword }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch from DeepSeek`);
+    }
+
+    const data = await response.json();
+    const generatedContent: string = data.response || '';
+
+    // Update Notion page with generated content
+    const updatePayload: UpdatePageParameters = {
+      page_id: id,
+      properties: {
+        generate: {
+          type: 'rich_text',
+          rich_text: [{ type: 'text', text: { content: generatedContent } }],
+        },
+      },
+    };
+
+    await notion.pages.update(updatePayload);
+
+    res.status(200).json({ message: 'Content generated and updated successfully' });
+  } catch (error) {
+    console.error('Error in content generation:', error);
+    res.status(500).json({ error: 'Failed to generate content' });
+  }
+}
